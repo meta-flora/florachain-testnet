@@ -7,7 +7,10 @@ SEEDS="d2babfd77827adb838012875a19eaa13c41f3b5b@3.16.81.157:26656"
 echo "🌿 Initializing Florachain node..."
 wasmd init floraval --chain-id $CHAIN_ID
 
-echo "📦 Downloading genesis file..."
+echo "🧹 Removing validator key to avoid consensus conflicts..."
+rm -f ~/.wasmd/config/priv_validator_key.json
+
+echo "📦 Downloading genesis..."
 curl -s $GENESIS_URL -o ~/.wasmd/config/genesis.json
 
 echo "🔧 Setting seed node..."
@@ -19,8 +22,5 @@ else
   sed -i 's/^minimum-gas-prices =.*/minimum-gas-prices = "0.025uflora"/' ~/.wasmd/config/app.toml
 fi
 
-echo "🧹 Removing local validator key to avoid consensus conflict..."
-rm -f ~/.wasmd/config/priv_validator_key.json
-
-echo "🚀 Starting the node..."
+echo "🚀 Starting node..."
 wasmd start
