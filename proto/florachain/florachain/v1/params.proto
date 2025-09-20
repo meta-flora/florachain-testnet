@@ -1,0 +1,13 @@
+syntax = "proto3";
+package florachain.florachain.v1;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/metaflora/florachain/x/florachain/types";
+
+// Params defines the parameters for the module.
+message Params {
+  option (amino.name) = "florachain/x/florachain/Params";
+  option (gogoproto.equal) = true;
+}

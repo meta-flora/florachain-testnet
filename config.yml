@@ -1,0 +1,27 @@
+version: 1
+validation: sovereign
+default_denom: uflora
+accounts: 
+- name: alice
+  coins:
+  - 20000token
+  - 200000000uflora
+- name: bob
+  coins:
+  - 10000token
+  - 100000000uflora
+client:
+  openapi:
+    path: docs/static/openapi.json
+faucet:
+  name: bob
+  coins:
+  - 5token
+  - 100000stake
+validators:
+- name: alice
+  bonded: 100000000uflora
+- name: validator1
+  bonded: 200000000uflora
+- name: validator2
+  bonded: 100000000uflora
