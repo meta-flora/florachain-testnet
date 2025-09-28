@@ -1,0 +1,23 @@
+[Unit]
+Description=Florachain Node with CosmWasm Support
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/flora/florachain
+ExecStart=/home/ubuntu/flora/florachain/florachaind start \
+  --home /home/ubuntu/.florachain \
+  --minimum-gas-prices 0uflora
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=florachaind
+Environment=HOME=/home/ubuntu
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/ubuntu/go/bin
+
+[Install]
+WantedBy=multi-user.target

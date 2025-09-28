@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 
 	clienthelpers "cosmossdk.io/client/v2/helpers"
@@ -45,8 +46,13 @@ import (
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
+	feegrantkeeper "cosmossdk.io/x/feegrant/keeper"
 	"github.com/metaflora/florachain/docs"
 	florachainmodulekeeper "github.com/metaflora/florachain/x/florachain/keeper"
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	"github.com/CosmWasm/wasmd/x/wasm"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 )
 
 const (
@@ -91,12 +97,16 @@ type App struct {
 	ConsensusParamsKeeper consensuskeeper.Keeper
 	CircuitBreakerKeeper  circuitkeeper.Keeper
 	ParamsKeeper          paramskeeper.Keeper
+	FeeGrantKeeper        feegrantkeeper.Keeper
 
 	// ibc keepers
 	IBCKeeper           *ibckeeper.Keeper
 	ICAControllerKeeper icacontrollerkeeper.Keeper
 	ICAHostKeeper       icahostkeeper.Keeper
 	TransferKeeper      ibctransferkeeper.Keeper
+
+	// wasm keeper
+	WasmKeeper wasmkeeper.Keeper
 
 	// simulation manager
 	sm               *module.SimulationManager
@@ -120,6 +130,7 @@ func AppConfig() depinject.Config {
 			// supply custom module basics
 			map[string]module.AppModuleBasic{
 				genutiltypes.ModuleName: genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
+				wasmtypes.ModuleName:    wasm.AppModuleBasic{},
 			},
 		),
 	)
@@ -174,9 +185,13 @@ func New(
 		&app.CircuitBreakerKeeper,
 		&app.ParamsKeeper,
 		&app.FlorachainKeeper,
+		&app.FeeGrantKeeper,
 	); err != nil {
 		panic(err)
 	}
+
+	// Register CosmWasm interfaces explicitly with the codec
+	wasmtypes.RegisterInterfaces(app.interfaceRegistry)
 
 	// add to default baseapp options
 	// enable optimistic execution
@@ -185,10 +200,12 @@ func New(
 	// build app
 	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
 
-	// register legacy modules
-	if err := app.registerIBCModules(appOpts); err != nil {
+	// register legacy modules including CosmWasm AFTER building the app
+	if err := app.registerWasmModules(appOpts); err != nil {
 		panic(err)
 	}
+
+
 
 	/****  Module Options ****/
 
@@ -299,3 +316,58 @@ func BlockedAddresses() map[string]bool {
 
 	return result
 }
+
+// registerWasmModules register CosmWasm keepers and non dependency inject modules.
+func (app *App) registerWasmModules(appOpts servertypes.AppOptions) error {
+	// set up non depinject support modules store keys
+	if err := app.RegisterStores(
+		storetypes.NewKVStoreKey(wasmtypes.StoreKey),
+	); err != nil {
+		return err
+	}
+
+	// set up params subspace for wasm module
+	app.ParamsKeeper.Subspace(wasmtypes.ModuleName)
+
+	wasmConfig, err := wasm.ReadNodeConfig(appOpts)
+	if err != nil {
+		return fmt.Errorf("error while reading wasm config: %s", err)
+	}
+
+	// Initialize WasmKeeper with minimal dependencies for testnet
+	app.WasmKeeper = wasmkeeper.NewKeeper(
+		app.appCodec,
+		runtime.NewKVStoreService(app.GetKey(wasmtypes.StoreKey)),
+		app.AuthKeeper,
+		app.BankKeeper,
+		app.StakingKeeper,
+		nil, // distrkeeper.NewQuerier(app.DistrKeeper), // simplified for testnet
+		nil, // IBCFeeKeeper - not needed for testnet
+		nil, // IBC ChannelKeeper - not needed for testnet  
+		nil, // IBC PortKeeper - not needed for testnet
+		app.MsgServiceRouter(),
+		app.GRPCQueryRouter(),
+		DefaultNodeHome,
+		wasmConfig,
+		wasmtypes.VMConfig{},
+		wasmkeeper.BuiltInCapabilities(),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	// register wasm module
+	if err := app.RegisterModules(
+		wasm.NewAppModule(
+			app.appCodec,
+			&app.WasmKeeper,
+			app.StakingKeeper,
+			app.AuthKeeper,
+			app.BankKeeper,
+			app.MsgServiceRouter(),
+			app.GetSubspace(wasmtypes.ModuleName),
+		)); err != nil {
+		return err
+	}
+
+	return nil
+}
+

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 
+	"github.com/CosmWasm/wasmd/x/wasm"
+	wasmcli "github.com/CosmWasm/wasmd/x/wasm/client/cli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -54,10 +56,14 @@ func initRootCmd(
 		txCommand(),
 		keys.Commands(),
 	)
+	wasmcli.ExtendUnsafeResetAllCmd(rootCmd)
+
 }
 
 // addModuleInitFlags adds more flags to the start command.
 func addModuleInitFlags(startCmd *cobra.Command) {
+	wasm.AddModuleInitFlags(startCmd)
+
 }
 
 func queryCommand() *cobra.Command {
@@ -79,6 +85,9 @@ func queryCommand() *cobra.Command {
 		authcmd.QueryTxCmd(),
 		server.QueryBlockResultsCmd(),
 	)
+
+	// Add wasm query commands
+	cmd.AddCommand(wasmcli.GetQueryCmd())
 
 	return cmd
 }
@@ -104,6 +113,9 @@ func txCommand() *cobra.Command {
 		authcmd.GetDecodeCommand(),
 		authcmd.GetSimulateCmd(),
 	)
+
+	// Add wasm tx commands
+	cmd.AddCommand(wasmcli.GetTxCmd())
 
 	return cmd
 }

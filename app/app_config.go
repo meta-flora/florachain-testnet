@@ -172,6 +172,8 @@ var (
 						icatypes.ModuleName,
 						// chain modules
 						florachainmoduletypes.ModuleName,
+						// wasm module
+						"wasm",
 						// this line is used by starport scaffolding # stargate/app/initGenesis
 					},
 				}),

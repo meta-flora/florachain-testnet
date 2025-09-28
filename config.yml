@@ -25,3 +25,13 @@ validators:
   bonded: 200000000uflora
 - name: validator2
   bonded: 100000000uflora
+wasm:
+  query_gas_limit: 3000000
+  contract_query_gas_limit: 3000000
+  max_contract_size: 512000
+  max_contract_gas: 10000000
+  max_contract_msg_size: 1024
+  max_contract_data_size: 1024
+  cache_size: 100
+  contract_debug_mode: false
+  wasm_memory_cache_size: 0

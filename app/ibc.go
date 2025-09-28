@@ -1,8 +1,13 @@
 package app
 
 import (
+	"fmt"
+
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
+	"github.com/CosmWasm/wasmd/x/wasm"
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
@@ -40,6 +45,7 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 		storetypes.NewKVStoreKey(ibctransfertypes.StoreKey),
 		storetypes.NewKVStoreKey(icahosttypes.StoreKey),
 		storetypes.NewKVStoreKey(icacontrollertypes.StoreKey),
+		storetypes.NewKVStoreKey(wasmtypes.StoreKey),
 	); err != nil {
 		return err
 	}
@@ -51,8 +57,34 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 	app.ParamsKeeper.Subspace(ibctransfertypes.ModuleName).WithKeyTable(ibctransfertypes.ParamKeyTable())
 	app.ParamsKeeper.Subspace(icacontrollertypes.SubModuleName).WithKeyTable(icacontrollertypes.ParamKeyTable())
 	app.ParamsKeeper.Subspace(icahosttypes.SubModuleName).WithKeyTable(icahosttypes.ParamKeyTable())
+	app.ParamsKeeper.Subspace(wasmtypes.ModuleName)
 
 	govModuleAddr, _ := app.AuthKeeper.AddressCodec().BytesToString(authtypes.NewModuleAddress(govtypes.ModuleName))
+
+	// Initialize CosmWasm keeper (simplified for testnet)
+	wasmConfig, err := wasm.ReadNodeConfig(appOpts)
+	if err != nil {
+		return fmt.Errorf("error while reading wasm config: %s", err)
+	}
+
+	app.WasmKeeper = wasmkeeper.NewKeeper(
+		app.appCodec,
+		runtime.NewKVStoreService(app.GetKey(wasmtypes.StoreKey)),
+		app.AuthKeeper,
+		app.BankKeeper,
+		app.StakingKeeper,
+		nil, // distrkeeper.NewQuerier(app.DistrKeeper), // simplified for testnet
+		nil, // IBCFeeKeeper - not needed for testnet
+		nil, // IBC ChannelKeeper - not needed for testnet  
+		nil, // IBC PortKeeper - not needed for testnet
+		app.MsgServiceRouter(),
+		app.GRPCQueryRouter(),
+		DefaultNodeHome,
+		wasmConfig,
+		wasmtypes.VMConfig{},
+		wasmkeeper.BuiltInCapabilities(),
+		govModuleAddr,
+	)
 
 	// Create IBC keeper
 	app.IBCKeeper = ibckeeper.NewKeeper(
@@ -131,13 +163,25 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 	soloLightClientModule := solomachine.NewLightClientModule(app.appCodec, storeProvider)
 	clientKeeper.AddRoute(solomachine.ModuleName, &soloLightClientModule)
 
-	// register IBC modules
+	// Explicitly register CosmWasm interfaces with the codec
+	wasmtypes.RegisterInterfaces(app.interfaceRegistry)
+
+	// register IBC modules and CosmWasm
 	if err := app.RegisterModules(
 		ibc.NewAppModule(app.IBCKeeper),
 		ibctransfer.NewAppModule(app.TransferKeeper),
 		icamodule.NewAppModule(&app.ICAControllerKeeper, &app.ICAHostKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
 		solomachine.NewAppModule(soloLightClientModule),
+		wasm.NewAppModule(
+			app.appCodec,
+			&app.WasmKeeper,
+			app.StakingKeeper,
+			app.AuthKeeper,
+			app.BankKeeper,
+			app.MsgServiceRouter(),
+			app.GetSubspace(wasmtypes.ModuleName),
+		),
 	); err != nil {
 		return err
 	}
@@ -150,11 +194,12 @@ func (app *App) registerIBCModules(appOpts servertypes.AppOptions) error {
 // This needs to be removed after IBC supports App Wiring.
 func RegisterIBC(cdc codec.Codec) map[string]appmodule.AppModule {
 	modules := map[string]appmodule.AppModule{
-		ibcexported.ModuleName:      ibc.NewAppModule(&ibckeeper.Keeper{}),
-		ibctransfertypes.ModuleName: ibctransfer.NewAppModule(ibctransferkeeper.Keeper{}),
-		icatypes.ModuleName:         icamodule.NewAppModule(&icacontrollerkeeper.Keeper{}, &icahostkeeper.Keeper{}),
-		ibctm.ModuleName:            ibctm.NewAppModule(ibctm.NewLightClientModule(cdc, ibcclienttypes.StoreProvider{})),
-		solomachine.ModuleName:      solomachine.NewAppModule(solomachine.NewLightClientModule(cdc, ibcclienttypes.StoreProvider{})),
+		ibcexported.ModuleName:      ibc.AppModule{},
+		ibctransfertypes.ModuleName: ibctransfer.AppModule{},
+		icatypes.ModuleName:         icamodule.AppModule{},
+		ibctm.ModuleName:            ibctm.AppModule{},
+		solomachine.ModuleName:      solomachine.AppModule{},
+		wasmtypes.ModuleName:        wasm.AppModule{},
 	}
 
 	for _, m := range modules {
